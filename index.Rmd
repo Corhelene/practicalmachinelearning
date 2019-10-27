@@ -1,0 +1,150 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Ellen Bayens"
+date: "27-10-2019"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Prediction of performance of physical exercises
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These types of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this research, we will use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Out of this data we will make a prediction on how well they performed the exercises. 
+
+## Getting the data
+First we'll get the data:  
+```{r include=FALSE}
+library(caret)
+library(dplyr)
+library(parallel)
+library(doParallel)
+```
+
+```{r}
+training <- read.csv("C:/Users/ellen/OneDrive/Documenten/cursus/Data Sciece with R JHU/Hoofdstuk 8/Assignment8_training.csv", sep = ";", na.strings=c(""," ","NA"))
+testing <- read.csv("C:/Users/ellen/OneDrive/Documenten/cursus/Data Sciece with R JHU/Hoofdstuk 8/Assignment8_testing.csv", sep = ";", na.strings=c(""," ","NA"))
+```
+
+We will use the original test set as validation set. And we make a partition of the training set into a new training set (70% of the old training set) and a new test set (30% of the old test set):
+```{r}
+set.seed(33433)
+validation <- testing
+inTrain <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+training <- training[inTrain,]
+testing <- training[-inTrain,]
+dim(training)
+
+```
+
+## **Feature selection**
+Since our data set has 160 variables, we need to have a closer look at these variables and make a feature selection. This will improve our final model, because we'll eliminate the variables that do not contribute much to the prediction.  
+
+#### *Delete the variables with mostly NA as value*
+First we'll delete all the variables with at least 95% NA values (95% of 13737 = 13050).   
+All feature selection activities have to be applied to training, testing and validation data sets. 
+```{r}
+#Count the number of NA's in each column of the training data set
+na_count_train <-sapply(training, function(y) sum(length(which(is.na(y))))) 
+#Delete the variables which are almost only NA 
+training1 <- training[,na_count_train<13050]                                
+#Delete the same variables in the test set
+testing1 <- testing[,na_count_train<13050]                                  
+#Delete the same variables in the validation set
+validation1 <- validation[,na_count_train<13050]                            
+```
+#### *Delete the variables which do not say much about the prediction*
+Next, we look at the variables which are of no importance for how the exercise will be executed. These are the variables which contain  one of the words:  
+
+* "timestamp" 
+* "window"
+* "X"
+* "user_name"
+```{r}
+training2 <- training1[,-c(1,2,3,4,5,6,7)]                                   
+testing2 <- testing1[,-c(1,2,3,4,5,6,7)]
+validation2 <- validation1[,-c(1,2,3,4,5,6,7)]
+```
+
+#### *Delete the variables added by the author*
+The author of the article from which we get the data has already done some prework. He made new variables out of the variables obtained from the accelerometers. We will delete everything except names which include -x/-y/-z coordinates, and of course the outcome (classe).
+
+```{r}
+index <- grepl("_x|_y|_z", names(training2))
+index[53] <- TRUE
+training3 <- training2[,index]
+testing3 <- testing2[,index]
+validation3 <- validation2[, index]
+```
+
+#### *Delete the variables which have no variability at alL*
+The last thing to do is to find the variables near zero. These are the variables with almost no variability. 
+```{r}
+nearZero <- nearZeroVar(training2,saveMetrics=TRUE)
+nearZeroIndex <- which(nearZero$nzv == TRUE)                                
+```
+
+Conclusion: there are no near zero variables left.  
+So we will go on with the training/test set of 37 variables. 
+
+## **Train the model**
+
+Now we are ready to train the model with the training3 data set. Since there are quite a lot observations (13737) this takes quite a lot of time. So we will use the process of a parallel implementation of a random forest model. 
+
+#### *Step 1: Configure parallel processing*
+
+```{r}
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+```
+
+#### *Step 2: Configure trainControl object*
+
+First we need to make a trainControl object, by using cross validation. The cross validation we use is a 10-fold, this leads to a good accuracy. 
+
+```{r}
+fitControl <- trainControl(method = "cv", number = 10, allowParallel = TRUE)
+```
+
+#### *Step 3: Develop training model*
+
+To train the model, we will use a random forest method. 
+
+```{r cache = TRUE}
+x <- training3[,-37]
+y <- training3[,37]
+fit <- train(x,y, method="rf",data=training3,trControl = fitControl)
+```
+
+#### *Step 4: De-register parallel processing cluster*
+
+```{r}
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+## Conclusion: Analysis of the accuracy of the model
+```{r}
+fit
+confusionMatrix.train(fit)
+```
+
+When we look at the average accuracy of the 10 folds, we end up with an accuracy of 98.6%. 
+Let's see what the accuracy will be when using the test set. 
+
+```{r}
+confusionMatrix(testing3$classe,predict(fit,testing3))
+```
+
+On the test set we have an accuracy of 100%. Not bad!
+
+
+
+
+
+
