@@ -141,7 +141,7 @@ Let's see what the accuracy will be when using the test set.
 confusionMatrix(testing3$classe,predict(fit,testing3))
 ```
 
-On the test set we have an accuracy of 100%. Not bad!
+On the test set we have an accuracy of 100%. Not bad at all!
 
 
 
